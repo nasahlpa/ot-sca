@@ -1,0 +1,67 @@
+target:
+  target_type: cw310
+  fpga_bitstream: "../objs/lowrisc_systems_chip_earlgrey_cw310_0.1.bit"
+  force_program_bitstream: True
+  fw_bin: "../objs/sca_ujson_fpga_cw310.bin"
+  # target_clk_mult is a hardcoded value in the bitstream. Do not change.
+  target_clk_mult: 0.24
+  target_freq: 24000000
+  baudrate: 115200
+  output_len_bytes: 16
+  protocol: "ujson"
+  port: "/dev/ttyACM2"
+  # Trigger source.
+  # hw: Precise, hardware-generated trigger - FPGA only.
+  # sw: Fully software-controlled trigger.
+  trigger: "hw"
+husky:
+  sampling_rate: 200000000
+  num_segments: 69
+  num_cycles: 170
+  offset_cycles: -2
+  scope_gain: 38
+waverunner:
+  waverunner_ip: 100.107.71.10
+  num_segments: 50
+  # num_samples: 6000
+  # offset_samples: 0
+  # cycles will only be used if not given in samples
+  num_cycles: 60
+  offset_cycles: 0
+  # sampling rate needed for cycle to sample conversion
+  sampling_rate: 2500000000
+  channel: C1
+  sparsing: 0
+capture:
+  scope_select: husky
+  # scope_select: waverunner
+  num_traces: 10000000
+  show_plot: True
+  plot_traces: 100
+  trace_db: ot_trace_library
+  trace_threshold: 100000
+  # trace_db: cw
+test:
+  which_test: aes_gcm_fvsr_batch
+  aad_len_bytes: 16
+  key_len_bytes: 16
+  text_len_bytes: 16
+  # Key used for the fixed set.
+  key_fixed: [0x81, 0x1E, 0x37, 0x31, 0xB0, 0x12, 0x0A, 0x78, 0x42, 0x78, 0x1E, 0x22, 0xB2, 0x5C, 0xDD, 0xF9]
+  # IV used for the fixed set.
+  iv_fixed: [0x81, 0x1E, 0x37, 0x31, 0xB0, 0x12, 0x0A, 0x78, 0x42, 0x78, 0x1E, 0x22]
+  # Static values that are used by the fixed and the random set.
+  ptx_blocks: 2
+  ptx_static: [[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA], [0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB]]
+  ptx_last_block_len_bytes: 16
+  aad_blocks: 2
+  aad_static: [[0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC], [0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD]]
+  aad_last_block_len_bytes: 16
+  # Trigger configuration.
+  triggers: [True, False, False, False, False] # [All zero block, Init. block, AAD block, PTX block, TAG block]
+  trigger_block: 0 # 0 = first block.
+  # seed for PRNG to generate sequence of plaintexts and keys; Python random class on host, Mersenne twister implementation on OT SW
+  batch_prng_seed: 0
+  # 32-bit seed for masking on device. To switch off the masking, use 0 as LFSR seed.
+  #lfsr_seed: 0x00000000
+  lfsr_seed: 0xdeadbeef
