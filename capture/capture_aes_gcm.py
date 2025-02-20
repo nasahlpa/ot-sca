@@ -108,7 +108,8 @@ def setup(cfg: dict, project: Path):
         baudrate = cfg["target"].get("baudrate"),
         port = cfg["target"].get("port"),
         output_len = cfg["target"].get("output_len_bytes"),
-        usb_serial = cfg["target"].get("usb_serial")
+        usb_serial = cfg["target"].get("usb_serial"),
+        husky_serial = cfg["husky"].get("usb_serial")
     )
     target = Target(target_cfg)
 
@@ -143,6 +144,7 @@ def setup(cfg: dict, project: Path):
         sparsing = cfg[scope_type].get("sparsing"),
         scope_gain = cfg[scope_type].get("scope_gain"),
         pll_frequency = cfg["target"]["pll_frequency"],
+        scope_sn = cfg[scope_type].get("usb_serial"),
     )
     scope = Scope(scope_cfg)
 
@@ -219,7 +221,9 @@ def configure_cipher(cfg, capture_cfg, ot_aes_gcm, ot_prng):
     return device_id
 
 
-def generate_next_data(sample_fixed, mode, key_fixed, key_len, iv_fixed, iv_len):
+def generate_next_data(sample_fixed, mode, key_fixed, key_len, iv_fixed, iv_len,
+                       ptx_fixed, ptx_blocks, ptx_last_block_len, aad_fixed, aad_blocks,
+                       aad_last_block_len):
     """ Generate next cipher material for the encryption.
 
     This function derives the next IV and key for the next encryption.
@@ -231,28 +235,70 @@ def generate_next_data(sample_fixed, mode, key_fixed, key_len, iv_fixed, iv_len)
         key_len: The key length.
         iv_fixed: The fixed IV.
         iv_len: The IV length.
+        ptx_fixed: The fixed PTX.
+        ptx_blocks: The number of PTX blocks.
+        ptx_last_block_len: The length in bytes of the last block.
+        aad_fixed: The fixed AAD.
+        aad_blocks: The number of AAD blocks.
+        aad_last_block_len: The length in bytes of the last block.
     Returns:
         iv: The next IV.
         key: The next key.
-        tag: The calculated tag output.
+        ptx: The next PTX.
+        aad: The next AAD.
     """
-    # Generate FvsR key or IV.
-    if sample_fixed:
-        iv = iv_fixed[0:iv_len]
-        key = key_fixed[0:key_len]
+    if mode == "aes_gcm_fvsr_batch_iv_key":
+        # Generate FvsR key or IV.
+        if sample_fixed:
+            iv = iv_fixed[0:iv_len]
+            key = key_fixed[0:key_len]
+        else:
+            # Generate random IV.
+            iv = []
+            for i in range(0, 16):
+                iv.append(random.randint(0, 255))
+            iv = iv[0:iv_len]
+            # Generate random key.
+            key = []
+            for i in range(0, 16):
+                key.append(random.randint(0, 255))
+            key = key[0:key_len]
+        # Returned fixed AAD and PTX.
+        aad = aad_fixed
+        ptx = ptx_fixed
+    elif mode == "aes_gcm_fvsr_batch_ptx_aad":
+        if sample_fixed:
+            ptx = ptx_fixed
+            aad = aad_fixed
+        else:
+            # Generate random PTX.
+            ptx = []
+            for i in range(0, ptx_blocks):
+                ptx_block = []
+                valid_bytes = 16
+                for j in range(0, valid_bytes):
+                    ptx_block.append(random.randint(0, 255))
+                if i == ptx_blocks - 1:
+                    valid_bytes = ptx_last_block_len
+                ptx.append(ptx_block[0:valid_bytes])
+            # Generate random AAD.
+            aad = []
+            for i in range(0, aad_blocks):
+                aad_block = []
+                valid_bytes = 16
+                for j in range(0, valid_bytes):
+                    aad_block.append(random.randint(0, 255))
+                if i == aad_blocks - 1:
+                    valid_bytes = aad_last_block_len
+                aad.append(aad_block[0:valid_bytes])
+         # Returned fixed IV and key.
+        iv = iv_fixed
+        key = key_fixed
     else:
-        # Generate random IV.
-        iv = []
-        for i in range(0, 16):
-            iv.append(random.randint(0, 255))
-        iv = iv[0:iv_len]
-        # Generate random key.
-        key = []
-        for i in range(0, 16):
-            key.append(random.randint(0, 255))
-        key = key[0:key_len]
+        print("Mode not supported")
 
-    return iv, key
+
+    return iv, key, ptx, aad
 
 
 def calculate_ref_tag(key, iv, aad, aad_blocks, ptx, ptx_blocks):
@@ -328,15 +374,26 @@ def capture(scope: Scope, ot_aes_gcm: OTAESGCM, capture_cfg: CaptureConfig,
             # Arm the scope.
             scope.arm()
 
-            if capture_cfg.capture_mode == "aes_gcm_fvsr_batch":
+            if capture_cfg.capture_mode == "aes_gcm_fvsr_batch_iv_key":
                 # Start FvsR on the device.
-                ot_aes_gcm.fvsr_batch(capture_cfg.num_segments, capture_cfg.triggers,
-                                      capture_cfg.trigger_block, capture_cfg.iv_len_bytes,
-                                      capture_cfg.iv_fixed, capture_cfg.key_len_bytes,
-                                      capture_cfg.key_fixed, capture_cfg.aad_blocks,
-                                      capture_cfg.ptx_blocks, capture_cfg.aad_static,
-                                      capture_cfg.aad_last_block_len_bytes, capture_cfg.ptx_static,
-                                      capture_cfg.ptx_last_block_len_bytes)
+                ot_aes_gcm.fvsr_batch_iv_key(capture_cfg.num_segments, capture_cfg.triggers,
+                                             capture_cfg.trigger_block, capture_cfg.iv_len_bytes,
+                                             capture_cfg.iv_fixed, capture_cfg.key_len_bytes,
+                                             capture_cfg.key_fixed, capture_cfg.aad_blocks,
+                                             capture_cfg.ptx_blocks, capture_cfg.aad_static,
+                                             capture_cfg.aad_last_block_len_bytes,
+                                             capture_cfg.ptx_static,
+                                             capture_cfg.ptx_last_block_len_bytes)
+            elif capture_cfg.capture_mode == "aes_gcm_fvsr_batch_ptx_aad":
+                # Start FvsR on the device.
+                ot_aes_gcm.fvsr_batch_ptx_aad(capture_cfg.num_segments, capture_cfg.triggers,
+                                              capture_cfg.trigger_block, capture_cfg.iv_len_bytes,
+                                              capture_cfg.iv_fixed, capture_cfg.key_len_bytes,
+                                              capture_cfg.key_fixed, capture_cfg.aad_blocks,
+                                              capture_cfg.ptx_blocks, capture_cfg.aad_static,
+                                              capture_cfg.aad_last_block_len_bytes,
+                                              capture_cfg.ptx_static,
+                                              capture_cfg.ptx_last_block_len_bytes)
             else:
                 print("Mode not supported")
 
@@ -350,16 +407,24 @@ def capture(scope: Scope, ot_aes_gcm: OTAESGCM, capture_cfg: CaptureConfig,
             for i in range(capture_cfg.num_segments):
                 # Sanity check retrieved data (wave).
                 assert len(waves[i, :]) >= 1
-                # Determine the IV and key for this round.
-                iv, key = generate_next_data(sample_fixed, capture_cfg.capture_mode,
-                                             capture_cfg.key_fixed, capture_cfg.key_len_bytes,
-                                             capture_cfg.iv_fixed, capture_cfg.iv_len_bytes)
+                # Determine IV, key, PTX, and AAD for this round.
+                iv, key, ptx, aad = generate_next_data(sample_fixed,
+                                                       capture_cfg.capture_mode,
+                                                       capture_cfg.key_fixed,
+                                                       capture_cfg.key_len_bytes,
+                                                       capture_cfg.iv_fixed,
+                                                       capture_cfg.iv_len_bytes,
+                                                       capture_cfg.ptx_static,
+                                                       capture_cfg.ptx_blocks,
+                                                       capture_cfg.ptx_last_block_len_bytes,
+                                                       capture_cfg.aad_static,
+                                                       capture_cfg.aad_blocks,
+                                                       capture_cfg.aad_last_block_len_bytes)
                 # Next iteration: fixed or random?
                 sample_fixed = random.getrandbits(32) & 0x1
                 # Calculate the expected tag.
-                tag = calculate_ref_tag(key, iv, capture_cfg.aad_static,
-                                        capture_cfg.aad_blocks, capture_cfg.ptx_static,
-                                        capture_cfg.ptx_blocks)
+                tag = calculate_ref_tag(key, iv, aad, capture_cfg.aad_blocks,
+                                        ptx, capture_cfg.ptx_blocks)
                 # Convert bytes into array.
                 tag_array = [x for x in tag]
                 # Accumulate the tag.

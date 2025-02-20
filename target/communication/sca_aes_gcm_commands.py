@@ -42,7 +42,7 @@ class OTAESGCM:
             # Read back device ID from device.
             return self.read_response(max_tries=30)
 
-    def fvsr_batch(self, num_batches: int, triggers: list[bool], trigger_block: int,
+    def fvsr_batch_iv_key(self, num_batches: int, triggers: list[bool], trigger_block: int,
                   iv_len_bytes: int, iv: list[int], key_len_bytes: int, key: list[int],
                   num_aad_blocks: int, num_ptx_blocks: int, aad, last_aad_len,
                   ptx, last_ptx_len):
@@ -68,7 +68,76 @@ class OTAESGCM:
             # AesSca command.
             self._ujson_aes_sca_cmd()
             # GcmFvsrBatch command.
-            self.target.write(json.dumps("GcmFvsrBatch").encode("ascii"))
+            self.target.write(json.dumps("GcmFvsrBatchIvKey").encode("ascii"))
+            time.sleep(0.01)
+            # Number of batch operations we are starting.
+            data = {"num_batch_ops": num_batches}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Trigger configuration.
+            data = {"triggers": triggers, "block": trigger_block}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Transmit IV.
+            data = {"block": iv, "num_valid_bytes": 12}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Transmit key.
+            data = {"key": key, "key_length": 16}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Number of AAD blocks.
+            data = {"num_blocks": num_aad_blocks}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Number of PTX blocks.
+            data = {"num_blocks": num_ptx_blocks}
+            self.target.write(json.dumps(data).encode("ascii"))
+            time.sleep(0.01)
+            # Transmit num_aad_blocks AADs.
+            for i in range(0, num_aad_blocks):
+                num_valid_bytes = 16
+                if i == num_aad_blocks - 1:
+                    num_valid_bytes = last_aad_len
+                data = {"block": aad[i], "num_valid_bytes": num_valid_bytes}
+                self.target.write(json.dumps(data).encode("ascii"))
+                time.sleep(0.01)
+            # Transmit num_ptx_blocks PTXs.
+            for i in range(0, num_ptx_blocks):
+                num_valid_bytes = 16
+                if i == num_ptx_blocks - 1:
+                    num_valid_bytes = last_ptx_len
+                data = {"block": ptx[i], "num_valid_bytes": num_valid_bytes}
+                self.target.write(json.dumps(data).encode("ascii"))
+                time.sleep(0.01)
+
+    def fvsr_batch_ptx_aad(self, num_batches: int, triggers: list[bool], trigger_block: int,
+                  iv_len_bytes: int, iv: list[int], key_len_bytes: int, key: list[int],
+                  num_aad_blocks: int, num_ptx_blocks: int, aad, last_aad_len,
+                  ptx, last_ptx_len):
+        """ Configure FvsR batch and start the operations.
+        Args:
+            num_batches: The number of batches we are starting.
+            triggers: Boolean array. If set, trigger.
+            trigger_block: Trigger at which block?
+            iv_len_bytes: Number of bytes for the IV.
+            iv: The current IV.
+            key_iv_len_bytes: Number of bytes for the key.
+            key: The current key.
+            num_aad_blocks: Number of AAD blocks we are sending.
+            num_ptx_blocks: Number of PTX blocks we are sending.
+            aad: Array of AAD blocks.
+            last_aad_len: Length of last AAD block.
+            ptx: Array of PTX blocks.
+            last_ptx_len: Length of last PTX block.
+        """
+        if self.simple_serial:
+            self.target.write(cmd="f", data=bytearray(key))
+        else:
+            # AesSca command.
+            self._ujson_aes_sca_cmd()
+            # GcmFvsrBatch command.
+            self.target.write(json.dumps("GcmFvsrBatchPtxAad").encode("ascii"))
             time.sleep(0.01)
             # Number of batch operations we are starting.
             data = {"num_batch_ops": num_batches}
